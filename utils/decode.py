@@ -1,53 +1,79 @@
-import ctcdecode
+# import ctcdecode
+# from itertools import groupby
+# import torch
+# from ctcdecode import CTCBeamDecoder
+
+# class Decode(object):
+#     def __init__(self, gloss_dict, num_classes, search_mode, blank_id=0):
+#         self.i2g_dict = dict((v, k) for k, v in gloss_dict.items())
+#         self.g2i_dict = {v: k for k, v in self.i2g_dict.items()}
+
+#         self.num_classes = num_classes
+#         self.search_mode = search_mode
+#         self.blank_id = blank_id
+#         vocab = [chr(x) for x in range(20000, 20000 + num_classes)]
+#         self.ctc_decoder = ctcdecode.CTCBeamDecoder(vocab, beam_width=10, blank_id=blank_id,
+#                                                     num_processes=10)
+
+#     def decode(self, nn_output, vid_lgt, batch_first=True, probs=False):
+#         if not batch_first:
+#             nn_output = nn_output.permute(1, 0, 2)
+#         if self.search_mode == "max":
+#             return self.MaxDecode(nn_output, vid_lgt)
+#         else:
+#             return self.BeamSearch(nn_output, vid_lgt, probs)
+
+#     def BeamSearch(self, nn_output, vid_lgt, probs=False):
+#         if not probs:
+#             nn_output = nn_output.softmax(-1).cpu()
+#         vid_lgt = vid_lgt.cpu()
+#         beam_result, beam_scores, timesteps, out_seq_len = self.ctc_decoder.decode(nn_output, vid_lgt)
+#         ret_list = []
+#         for batch_idx in range(len(nn_output)):
+#             first_result = beam_result[batch_idx][0][:out_seq_len[batch_idx][0]]
+#             if len(first_result) != 0:
+#                 first_result = torch.stack([x[0] for x in groupby(first_result)])
+#             ret_list.append([(self.i2g_dict[int(gloss_id)], idx) for idx, gloss_id in
+#                              enumerate(first_result)])
+#         return ret_list
+
+#     def MaxDecode(self, nn_output, vid_lgt):
+#         index_list = torch.argmax(nn_output, axis=2)
+#         batchsize, lgt = index_list.shape
+#         ret_list = []
+#         for batch_idx in range(batchsize):
+#             group_result = [x[0] for x in groupby(index_list[batch_idx][:vid_lgt[batch_idx]])]
+#             filtered = [*filter(lambda x: x != self.blank_id, group_result)]
+#             if len(filtered) > 0:
+#                 max_result = torch.stack(filtered)
+#                 max_result = [x[0] for x in groupby(max_result)]
+#             else:
+#                 max_result = filtered
+#             ret_list.append([(self.i2g_dict[int(gloss_id)], idx) for idx, gloss_id in
+#                              enumerate(max_result)])
+#         return ret_list
+
 from itertools import groupby
 import torch
 
 class Decode(object):
-    def __init__(self, gloss_dict, num_classes, search_mode, blank_id=0):
+    def __init__(self, gloss_dict, num_classes=None, search_mode="max", blank_id=0, **kwargs):
         self.i2g_dict = dict((v, k) for k, v in gloss_dict.items())
-        self.g2i_dict = {v: k for k, v in self.i2g_dict.items()}
-
-        self.num_classes = num_classes
-        self.search_mode = search_mode
+        self.search_mode = "max"   # force greedy
         self.blank_id = blank_id
-        vocab = [chr(x) for x in range(20000, 20000 + num_classes)]
-        self.ctc_decoder = ctcdecode.CTCBeamDecoder(vocab, beam_width=10, blank_id=blank_id,
-                                                    num_processes=10)
 
     def decode(self, nn_output, vid_lgt, batch_first=True, probs=False):
         if not batch_first:
             nn_output = nn_output.permute(1, 0, 2)
-        if self.search_mode == "max":
-            return self.MaxDecode(nn_output, vid_lgt)
-        else:
-            return self.BeamSearch(nn_output, vid_lgt, probs)
-
-    def BeamSearch(self, nn_output, vid_lgt, probs=False):
-        if not probs:
-            nn_output = nn_output.softmax(-1).cpu()
-        vid_lgt = vid_lgt.cpu()
-        beam_result, beam_scores, timesteps, out_seq_len = self.ctc_decoder.decode(nn_output, vid_lgt)
-        ret_list = []
-        for batch_idx in range(len(nn_output)):
-            first_result = beam_result[batch_idx][0][:out_seq_len[batch_idx][0]]
-            if len(first_result) != 0:
-                first_result = torch.stack([x[0] for x in groupby(first_result)])
-            ret_list.append([(self.i2g_dict[int(gloss_id)], idx) for idx, gloss_id in
-                             enumerate(first_result)])
-        return ret_list
+        return self.MaxDecode(nn_output, vid_lgt)
 
     def MaxDecode(self, nn_output, vid_lgt):
-        index_list = torch.argmax(nn_output, axis=2)
-        batchsize, lgt = index_list.shape
+        index_list = torch.argmax(nn_output, axis=2)  # (B, T)
+        batchsize, _ = index_list.shape
         ret_list = []
-        for batch_idx in range(batchsize):
-            group_result = [x[0] for x in groupby(index_list[batch_idx][:vid_lgt[batch_idx]])]
-            filtered = [*filter(lambda x: x != self.blank_id, group_result)]
-            if len(filtered) > 0:
-                max_result = torch.stack(filtered)
-                max_result = [x[0] for x in groupby(max_result)]
-            else:
-                max_result = filtered
-            ret_list.append([(self.i2g_dict[int(gloss_id)], idx) for idx, gloss_id in
-                             enumerate(max_result)])
+        for b in range(batchsize):
+            seq = index_list[b][:vid_lgt[b]].tolist()
+            seq = [x for x, _ in groupby(seq)]
+            seq = [x for x in seq if x != self.blank_id]
+            ret_list.append([(self.i2g_dict[int(gloss_id)], idx) for idx, gloss_id in enumerate(seq)])
         return ret_list
