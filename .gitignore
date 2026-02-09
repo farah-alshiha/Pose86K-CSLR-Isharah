@@ -12,3 +12,24 @@ annotations_v2/isharah2000/US/test.csv
 ./annotations_v2/isharah2000/US/test.csv
 .vscode/*
 .DS_Store
+
+# build / compiled deps
+ctcdecode/
+
+# python
+__pycache__/
+*.pyc
+venv/
+pose/
+
+# outputs
+work_dir/
+pred_outputs/
+*.pt
+
+# data
+data/
+*.pkl
+*.csv
+annotations_v2/**/train.*
+annotations_v2/**/dev.*
